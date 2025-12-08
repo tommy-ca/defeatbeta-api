@@ -410,6 +410,14 @@ SELECT
 FROM token_cap t, total_market m
 ```
 
+### Security Note: SQL Template Safety
+
+All SQL templates in this document use string interpolation for readability. For production:
+
+1. **Validate inputs** against known symbol/exchange lists before query execution
+2. **Use parameterized queries** where DuckDB supports them (see 04-client-library.md)
+3. **Risk is limited**: Queries target read-only parquet files over HTTP
+
 ## Data Dictionary
 
 ### Symbol Naming Convention

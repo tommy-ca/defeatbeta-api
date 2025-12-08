@@ -524,6 +524,39 @@ ORDER BY timestamp DESC
 LIMIT {limit}
 ```
 
+### Security Note: SQL Injection Mitigation
+
+The SQL templates above use string interpolation for simplicity. In production implementation:
+
+1. **Symbol Normalization**: The `_normalize_symbol()` method sanitizes input (uppercase, removes special chars)
+2. **Read-Only Context**: DuckDB queries parquet files over HTTP (no write operations possible)
+3. **Parameterized Queries**: For additional safety, use DuckDB parameters:
+
+```python
+# Preferred: Use parameterized queries
+def _query_table_safe(self, table: str, symbol: str, limit: int) -> pd.DataFrame:
+    url = self.hf_client.get_url_path(table)
+    sql = f"""
+        SELECT * FROM '{url}'
+        WHERE symbol = $1
+        ORDER BY timestamp DESC
+        LIMIT $2
+    """
+    return self.duckdb_client.connection.execute(sql, [symbol, limit]).df()
+```
+
+4. **Input Validation**: Always validate symbols against known list:
+
+```python
+VALID_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", ...}
+
+def _validate_symbol(self, symbol: str) -> str:
+    normalized = self._normalize_symbol(symbol)
+    if normalized not in VALID_SYMBOLS:
+        raise ValueError(f"Unknown symbol: {symbol}")
+    return normalized
+```
+
 ## Constants
 
 ```python
