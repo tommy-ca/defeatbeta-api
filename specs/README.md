@@ -20,6 +20,7 @@ This project aims to replicate the architecture and patterns of `defeatbeta-api`
 | [08 - Configuration](./08-configuration.md) | Environment variables, secrets, multi-env setup | **New** |
 | [09 - Error Handling](./09-error-handling.md) | API failures, recovery, alerting | **New** |
 | [10 - Security](./10-security.md) | API keys, secrets rotation, access controls | **New** |
+| [11 - Monitoring](./11-monitoring.md) | Metrics, dashboards, alerting, observability | **New** |
 
 ## Quick Links
 
