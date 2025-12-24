@@ -18,8 +18,13 @@
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SYMBOLS` | No | `BTCUSDT,ETHUSDT` | Comma-separated trading pairs |
-| `EXCHANGES` | No | `binance` | Comma-separated exchanges |
+| `ASSET_CLASSES` | No | `equities,fx,crypto_cex,crypto_dex,bonds` | Enabled asset classes |
+| `SYMBOLS` | No | `AAPL,MSFT` | Comma-separated equity tickers |
+| `FX_PAIRS` | No | `EURUSD,USDJPY` | Comma-separated FX pairs |
+| `CRYPTO_SYMBOLS` | No | `BTCUSDT,ETHUSDT` | Comma-separated crypto pairs |
+| `BOND_SYMBOLS` | No | `US10Y,US2Y` | Comma-separated bond symbols |
+| `EXCHANGES` | No | `binance` | Comma-separated CEX venues |
+| `DEX_CHAINS` | No | `ethereum,arbitrum` | Comma-separated DEX chains |
 | `DATA_WAREHOUSE_PATH` | No | `/data/warehouse` | Local parquet storage path |
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 | `DAGSTER_HOME` | No | `~/.dagster` | Dagster home directory |
@@ -36,6 +41,10 @@
 | `OKX_API_KEY` | No | - | OKX API key |
 | `OKX_API_SECRET` | No | - | OKX API secret |
 | `OKX_PASSPHRASE` | No | - | OKX API passphrase |
+| `FX_PROVIDER_KEY` | No | - | FX data provider API key |
+| `BOND_PROVIDER_KEY` | No | - | Bonds data provider API key |
+| `DEX_RPC_URLS` | No | - | Comma-separated RPC URLs |
+| `DEX_INDEXER_KEY` | No | - | Indexer API key (if required) |
 
 ### HuggingFace Configuration
 
@@ -49,11 +58,11 @@
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `CRYPTO_DATA_REPO` | No | `yourorg/crypto-cex-data` | HuggingFace dataset repo |
+| `MARKET_DATA_REPO` | No | `yourorg/market-data` | HuggingFace dataset repo |
 | `DUCKDB_MEMORY_LIMIT` | No | `80%` | DuckDB memory limit |
 | `DUCKDB_THREADS` | No | `4` | DuckDB thread count |
 | `HTTP_PROXY` | No | - | HTTP proxy URL |
-| `CACHE_DIR` | No | `/tmp/crypto_cache` | Local cache directory |
+| `CACHE_DIR` | No | `/tmp/market_cache` | Local cache directory |
 
 ---
 
@@ -62,7 +71,7 @@
 ### Pipeline Configuration
 
 ```python
-# crypto_pipeline/types/config.py
+# market_pipeline/types/config.py
 from pydantic import BaseModel, SecretStr, Field, field_validator
 from pydantic_settings import BaseSettings
 from typing import List, Optional
@@ -102,9 +111,14 @@ class HuggingFaceConfig(BaseModel):
 class PipelineSettings(BaseSettings):
     """Main pipeline settings loaded from environment."""
     
-    # Symbols and exchanges
-    symbols: List[str] = Field(default=["BTCUSDT", "ETHUSDT"])
+    # Asset selection
+    asset_classes: List[str] = Field(default=["equities", "fx", "crypto_cex", "crypto_dex", "bonds"])
+    equity_symbols: List[str] = Field(default=["AAPL", "MSFT"])
+    fx_pairs: List[str] = Field(default=["EURUSD", "USDJPY"])
+    crypto_symbols: List[str] = Field(default=["BTCUSDT", "ETHUSDT"])
+    bond_symbols: List[str] = Field(default=["US10Y", "US2Y"])
     exchanges: List[str] = Field(default=["binance"])
+    dex_chains: List[str] = Field(default=["ethereum"])
     
     # Storage
     data_warehouse_path: str = "/data/warehouse"
@@ -127,22 +141,28 @@ class PipelineSettings(BaseSettings):
     okx_api_key: Optional[SecretStr] = None
     okx_api_secret: Optional[SecretStr] = None
     okx_passphrase: Optional[SecretStr] = None
+
+    # FX / Bonds / DEX providers (optional)
+    fx_provider_key: Optional[SecretStr] = None
+    bond_provider_key: Optional[SecretStr] = None
+    dex_rpc_urls: List[str] = Field(default=[])
+    dex_indexer_key: Optional[SecretStr] = None
     
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
     
-    @field_validator('symbols', mode='before')
+    @field_validator('asset_classes', mode='before')
     @classmethod
-    def parse_symbols(cls, v):
+    def parse_asset_classes(cls, v):
         if isinstance(v, str):
             return [s.strip() for s in v.split(',')]
         return v
     
-    @field_validator('exchanges', mode='before')
+    @field_validator('equity_symbols', 'fx_pairs', 'crypto_symbols', 'bond_symbols', 'exchanges', 'dex_chains', 'dex_rpc_urls', mode='before')
     @classmethod
-    def parse_exchanges(cls, v):
+    def parse_lists(cls, v):
         if isinstance(v, str):
             return [e.strip() for e in v.split(',')]
         return v
@@ -196,7 +216,7 @@ def get_settings() -> PipelineSettings:
 ### Client Library Configuration
 
 ```python
-# defeatbeta_crypto/config.py
+# defeatbeta_api/config.py
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -205,7 +225,7 @@ class ClientSettings(BaseSettings):
     """Client library settings."""
     
     # Data source
-    crypto_data_repo: str = "yourorg/crypto-cex-data"
+    market_data_repo: str = "yourorg/market-data"
     
     # DuckDB settings
     duckdb_memory_limit: str = "80%"
@@ -217,7 +237,7 @@ class ClientSettings(BaseSettings):
     http_retries: int = 3
     
     # Cache settings
-    cache_dir: str = "/tmp/crypto_cache"
+    cache_dir: str = "/tmp/market_cache"
     cache_enabled: bool = True
     
     class Config:
@@ -249,7 +269,7 @@ DATA_WAREHOUSE_PATH=./data/dev_warehouse
 
 # HuggingFace (use test repo)
 HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
-HF_REPO_ID=yourorg/crypto-cex-data-dev
+HF_REPO_ID=yourorg/market-data-dev
 
 # Rate limits (lower for dev)
 BINANCE_RATE_LIMIT=120
@@ -274,7 +294,7 @@ EXCHANGES=binance,coinbase
 DATA_WAREHOUSE_PATH=/data/staging_warehouse
 
 HF_TOKEN=${HF_TOKEN}  # From secrets manager
-HF_REPO_ID=yourorg/crypto-cex-data-staging
+HF_REPO_ID=yourorg/market-data-staging
 
 BINANCE_RATE_LIMIT=600
 
@@ -300,7 +320,7 @@ DATA_WAREHOUSE_PATH=/data/warehouse
 
 # Production HuggingFace repo
 HF_TOKEN=${HF_TOKEN}
-HF_REPO_ID=yourorg/crypto-cex-data
+HF_REPO_ID=yourorg/market-data
 
 # Full rate limits
 BINANCE_RATE_LIMIT=1200
@@ -321,7 +341,7 @@ DUCKDB_THREADS=8
 
 # HuggingFace (required for publishing)
 HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
-HF_REPO_ID=yourorg/crypto-cex-data
+HF_REPO_ID=yourorg/market-data
 
 # ===================
 # Optional Settings
@@ -379,7 +399,7 @@ HF_REPO_ID=yourorg/crypto-cex-data
 ### Environment Detection
 
 ```python
-# crypto_pipeline/utils/env.py
+# market_pipeline/utils/env.py
 import os
 from enum import Enum
 from typing import Optional
@@ -417,11 +437,11 @@ def is_test() -> bool:
 ### Environment-Specific Loading
 
 ```python
-# crypto_pipeline/config_loader.py
+# market_pipeline/config_loader.py
 from pathlib import Path
 from dotenv import load_dotenv
 
-from crypto_pipeline.utils.env import get_environment, Environment
+from market_pipeline.utils.env import get_environment, Environment
 
 
 def load_environment_config():
@@ -453,10 +473,10 @@ def load_environment_config():
 ### Dagster Resource Configuration
 
 ```python
-# crypto_pipeline/definitions.py
+# market_pipeline/definitions.py
 from dagster import Definitions, EnvVar
 
-from crypto_pipeline.resources import BinanceClient, ParquetIOManager, HuggingFaceResource
+from market_pipeline.resources import BinanceClient, ParquetIOManager, HuggingFaceResource
 
 
 defs = Definitions(
@@ -485,7 +505,7 @@ defs = Definitions(
 # workspace.yaml
 load_from:
   - python_module:
-      module_name: crypto_pipeline.definitions
+      module_name: market_pipeline.definitions
       working_directory: .
 ```
 
@@ -603,7 +623,7 @@ jobs:
 ### Cloud Secrets (AWS Example)
 
 ```python
-# crypto_pipeline/utils/secrets.py
+# market_pipeline/utils/secrets.py
 import boto3
 import json
 from functools import lru_cache
@@ -632,9 +652,9 @@ def load_exchange_secrets():
 ## 8. Configuration Validation
 
 ```python
-# crypto_pipeline/utils/validate_config.py
+# market_pipeline/utils/validate_config.py
 import sys
-from crypto_pipeline.types.config import PipelineSettings
+from market_pipeline.types.config import PipelineSettings
 from pydantic import ValidationError
 
 
@@ -674,7 +694,7 @@ if __name__ == "__main__":
 - [ ] Set `HF_TOKEN` with valid HuggingFace token
 - [ ] Set `HF_REPO_ID` to target dataset repository
 - [ ] (Optional) Add exchange API keys for authenticated endpoints
-- [ ] Run `python -m crypto_pipeline.utils.validate_config`
+- [ ] Run `python -m market_pipeline.utils.validate_config`
 
 ### Before Production Deploy
 

@@ -35,6 +35,9 @@
 | `data.symbols.failed` | Gauge | Symbols with errors | > 10% |
 | `data.freshness_seconds` | Gauge | Time since last update | > 7200s (2h) |
 | `data.completeness` | Gauge | % of expected data present | < 95% |
+| `data.dex_indexer_lag_seconds` | Gauge | DEX indexer lag vs chain head | > 900s |
+| `data.bond_curve_coverage` | Gauge | % of expected tenors present | < 90% |
+| `data.fx_holiday_expected` | Gauge | 1 if FX holiday (skip alerts) | - |
 
 ### API Client Metrics
 
@@ -64,7 +67,7 @@
 ### Prometheus Metrics with Dagster
 
 ```python
-# crypto_pipeline/utils/metrics.py
+# market_pipeline/utils/metrics.py
 from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry, push_to_gateway
 import time
 from functools import wraps
@@ -152,7 +155,7 @@ def track_duration(metric: Histogram, labels: dict = None):
     return decorator
 
 
-def push_metrics(gateway: str = "localhost:9091", job: str = "crypto_pipeline"):
+def push_metrics(gateway: str = "localhost:9091", job: str = "market_pipeline"):
     """Push metrics to Prometheus Pushgateway."""
     push_to_gateway(gateway, job=job, registry=REGISTRY)
 ```
@@ -160,9 +163,9 @@ def push_metrics(gateway: str = "localhost:9091", job: str = "crypto_pipeline"):
 ### Dagster Asset Metrics
 
 ```python
-# crypto_pipeline/assets/bronze/ohlcv.py
+# market_pipeline/assets/bronze/ohlcv.py
 from dagster import asset, AssetExecutionContext, Output
-from crypto_pipeline.utils.metrics import (
+from market_pipeline.utils.metrics import (
     DATA_ROWS_INGESTED,
     DATA_ROWS_INVALID,
     SYMBOLS_STATUS,
@@ -231,7 +234,7 @@ def bronze_binance_ohlcv(
 ### Log Format
 
 ```python
-# crypto_pipeline/utils/logging.py
+# market_pipeline/utils/logging.py
 import logging
 import json
 import sys
@@ -303,7 +306,7 @@ class LogContext:
 ### Usage in Pipeline
 
 ```python
-from crypto_pipeline.utils.logging import LogContext
+from market_pipeline.utils.logging import LogContext
 
 def fetch_symbol_data(symbol: str, exchange: str):
     with LogContext(symbol=symbol, exchange=exchange) as log:
@@ -324,7 +327,7 @@ def fetch_symbol_data(symbol: str, exchange: str):
 {
   "timestamp": "2024-01-15T10:30:00.000Z",
   "level": "INFO",
-  "logger": "crypto_pipeline.assets.bronze",
+  "logger": "market_pipeline.assets.bronze",
   "message": "Fetch complete",
   "module": "ohlcv",
   "function": "fetch_symbol_data",
@@ -543,7 +546,7 @@ receivers:
 ### Endpoint Implementation
 
 ```python
-# crypto_pipeline/health.py
+# market_pipeline/health.py
 from fastapi import FastAPI, Response
 from datetime import datetime, timedelta
 import httpx
@@ -566,7 +569,7 @@ async def readiness_check():
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
-                "https://huggingface.co/api/datasets/yourorg/crypto-cex-data",
+                "https://huggingface.co/api/datasets/yourorg/market-data",
                 timeout=5
             )
             checks["huggingface"] = resp.status_code == 200

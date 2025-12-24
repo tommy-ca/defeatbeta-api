@@ -22,6 +22,9 @@
 | **Coinbase** | `view` only | No trade/transfer permissions |
 | **OKX** | Read-only | Use passphrase |
 | **Bybit** | Read-only | IP restrictions recommended |
+| **FX Provider** | Read-only | Respect rate limits and ToS |
+| **Bond Provider** | Read-only | Often rate-limited, cache responses |
+| **DEX RPC / Indexer** | Read-only | Use project keys with allowlists |
 
 ### Key Creation Best Practices
 
@@ -89,7 +92,7 @@ class Config(BaseSettings):
 ### AWS Secrets Manager Integration
 
 ```python
-# crypto_pipeline/utils/secrets.py
+# market_pipeline/utils/secrets.py
 import boto3
 import json
 from functools import lru_cache
@@ -146,7 +149,7 @@ def load_secrets_to_env():
 ### HashiCorp Vault Integration
 
 ```python
-# crypto_pipeline/utils/vault.py
+# market_pipeline/utils/vault.py
 import hvac
 import os
 
@@ -210,7 +213,7 @@ class VaultClient:
 ### Automated Rotation Check
 
 ```python
-# crypto_pipeline/utils/rotation_check.py
+# market_pipeline/utils/rotation_check.py
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
@@ -275,8 +278,8 @@ def rotation_health_check():
 
 # Security-sensitive files
 /.env* @security-team
-/crypto_pipeline/utils/secrets.py @security-team
-/crypto_pipeline/utils/vault.py @security-team
+/market_pipeline/utils/secrets.py @security-team
+/market_pipeline/utils/vault.py @security-team
 
 # Configuration files
 /dagster.yaml @devops-team
@@ -349,7 +352,7 @@ client = httpx.AsyncClient(verify=True)
 ### Sensitive Data Handling
 
 ```python
-# crypto_pipeline/utils/sanitize.py
+# market_pipeline/utils/sanitize.py
 import re
 from typing import Any, Dict
 
@@ -390,7 +393,7 @@ def sanitize_for_logging(data: Dict[str, Any]) -> Dict[str, Any]:
 
 ```python
 import logging
-from crypto_pipeline.utils.sanitize import sanitize_for_logging
+from market_pipeline.utils.sanitize import sanitize_for_logging
 
 logger = logging.getLogger(__name__)
 
@@ -435,7 +438,7 @@ def secure_file_permissions(path: str):
 ### Audit Log Implementation
 
 ```python
-# crypto_pipeline/utils/audit.py
+# market_pipeline/utils/audit.py
 import logging
 import json
 from datetime import datetime
@@ -511,7 +514,7 @@ jobs:
         run: safety check --full-report
       
       - name: Static security analysis
-        run: bandit -r crypto_pipeline/ -ll
+        run: bandit -r market_pipeline/ -ll
 ```
 
 ### Pinning Dependencies
@@ -563,7 +566,7 @@ WORKDIR /app
 
 # Copy only necessary files
 COPY pyproject.toml .
-COPY crypto_pipeline/ crypto_pipeline/
+COPY market_pipeline/ market_pipeline/
 
 # Install dependencies
 RUN pip install --no-cache-dir -e .

@@ -41,6 +41,9 @@
 | Schema Mismatch | Log error, alert |
 | Duplicate Data | Deduplicate silently |
 | Missing Data | Log warning, continue |
+| Market Holiday Gap | Log info, do not backfill (FX/bonds) |
+| Indexer Lag | Log warning, retry on next run (DEX) |
+| Chain Reorg | Mark affected window and reprocess (DEX) |
 
 ---
 
@@ -49,7 +52,7 @@
 ### Tenacity Retry Decorator
 
 ```python
-# crypto_pipeline/utils/retry.py
+# market_pipeline/utils/retry.py
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -119,8 +122,8 @@ def rate_limit_retry(retry_after_header: str = "Retry-After"):
 ### Usage in API Client
 
 ```python
-# crypto_pipeline/resources/cex_clients.py
-from crypto_pipeline.utils.retry import api_retry, rate_limit_retry
+# market_pipeline/resources/cex_clients.py
+from market_pipeline.utils.retry import api_retry, rate_limit_retry
 
 
 class BinanceClient(ConfigurableResource):
@@ -153,7 +156,7 @@ class BinanceClient(ConfigurableResource):
 ### Bronze Asset with Error Isolation
 
 ```python
-# crypto_pipeline/assets/bronze/ohlcv.py
+# market_pipeline/assets/bronze/ohlcv.py
 from dagster import asset, AssetExecutionContext, Output, MetadataValue
 import pandas as pd
 from typing import List, Tuple
@@ -249,7 +252,7 @@ def bronze_binance_ohlcv(
 ### Silver Asset with Validation Errors
 
 ```python
-# crypto_pipeline/assets/silver/ohlcv_normalized.py
+# market_pipeline/assets/silver/ohlcv_normalized.py
 
 @asset(group_name="silver")
 def silver_ohlcv_normalized(
@@ -318,7 +321,7 @@ def silver_ohlcv_normalized(
 ## 4. Custom Exception Classes
 
 ```python
-# crypto_pipeline/exceptions.py
+# market_pipeline/exceptions.py
 from typing import Optional, Dict, Any
 
 
@@ -391,7 +394,7 @@ class ConfigurationError(PipelineError):
 ### Alerting Implementation
 
 ```python
-# crypto_pipeline/utils/alerting.py
+# market_pipeline/utils/alerting.py
 import os
 import httpx
 from enum import Enum
@@ -527,10 +530,10 @@ def alert_warning(title: str, message: str, **details):
 ### Dagster Failure Hooks
 
 ```python
-# crypto_pipeline/hooks.py
+# market_pipeline/hooks.py
 from dagster import failure_hook, HookContext
 
-from crypto_pipeline.utils.alerting import alert_critical, alert_error
+from market_pipeline.utils.alerting import alert_critical, alert_error
 
 
 @failure_hook
@@ -567,7 +570,7 @@ def alert_on_failure(context: HookContext):
 ### Automatic Backfill on Failure
 
 ```python
-# crypto_pipeline/sensors/failure_sensor.py
+# market_pipeline/sensors/failure_sensor.py
 from dagster import (
     sensor,
     RunRequest,
@@ -621,7 +624,7 @@ def failure_recovery_sensor(context: SensorEvaluationContext):
 ### Manual Recovery Commands
 
 ```python
-# crypto_pipeline/cli.py
+# market_pipeline/cli.py
 import click
 from datetime import datetime, timedelta
 

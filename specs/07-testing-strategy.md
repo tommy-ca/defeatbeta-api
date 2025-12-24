@@ -15,7 +15,7 @@
 ### Pipeline Repository
 
 ```
-defeatbeta-crypto-pipeline/
+defeatbeta-market-pipeline/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py              # Shared fixtures
@@ -29,14 +29,21 @@ defeatbeta-crypto-pipeline/
 │   │
 │   ├── assets/                  # Dagster asset tests
 │   │   ├── __init__.py
-│   │   ├── test_bronze_ohlcv.py
-│   │   ├── test_bronze_funding.py
+│   │   ├── test_bronze_equities.py
+│   │   ├── test_bronze_fx.py
+│   │   ├── test_bronze_cex.py
+│   │   ├── test_bronze_dex.py
+│   │   ├── test_bronze_bonds.py
 │   │   ├── test_silver_normalized.py
 │   │   └── test_gold_publish.py
 │   │
 │   ├── resources/               # Resource tests
 │   │   ├── __init__.py
+│   │   ├── test_equity_provider.py
+│   │   ├── test_fx_provider.py
+│   │   ├── test_bond_provider.py
 │   │   ├── test_binance_client.py
+│   │   ├── test_dex_indexer.py
 │   │   ├── test_parquet_io.py
 │   │   └── test_huggingface.py
 │   │
@@ -46,23 +53,31 @@ defeatbeta-crypto-pipeline/
 │   │   └── test_backfill.py
 │   │
 │   └── fixtures/                # Test data
+│       ├── equities_sample.json
+│       ├── fx_sample.json
+│       ├── bonds_sample.json
 │       ├── ohlcv_sample.json
 │       ├── funding_sample.json
 │       └── api_responses/
 │           ├── binance_klines.json
-│           └── binance_funding.json
+│           ├── binance_funding.json
+│           └── dex_swaps.json
 ```
 
 ### Client Library Repository
 
 ```
-defeatbeta-crypto-api/
+defeatbeta-api/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
 │   │
 │   ├── unit/
-│   │   ├── test_token.py
+│   │   ├── test_ticker.py
+│   │   ├── test_fx_pair.py
+│   │   ├── test_crypto_token.py
+│   │   ├── test_dex_pool.py
+│   │   ├── test_bond.py
 │   │   ├── test_sql_loader.py
 │   │   └── test_utils.py
 │   │
@@ -86,7 +101,7 @@ import pytest
 from datetime import datetime
 from pydantic import ValidationError
 
-from crypto_pipeline.types.ohlcv import OHLCVRecord, OHLCVDataset
+from market_pipeline.types.ohlcv import OHLCVRecord, OHLCVDataset
 
 
 class TestOHLCVRecord:
@@ -191,7 +206,7 @@ import pytest
 import pandas as pd
 from datetime import datetime
 
-from crypto_pipeline.utils.validators import validate_ohlcv, ValidationResult
+from market_pipeline.utils.validators import validate_ohlcv, ValidationResult
 
 
 class TestOHLCVValidator:
@@ -273,7 +288,7 @@ import pytest
 import asyncio
 import time
 
-from crypto_pipeline.utils.rate_limiter import AsyncRateLimiter
+from market_pipeline.utils.rate_limiter import AsyncRateLimiter
 
 
 class TestAsyncRateLimiter:
@@ -340,8 +355,8 @@ from unittest.mock import MagicMock, AsyncMock
 
 from dagster import build_asset_context, materialize
 
-from crypto_pipeline.assets.bronze.ohlcv import bronze_binance_ohlcv
-from crypto_pipeline.resources.cex_clients import BinanceClient
+from market_pipeline.assets.bronze.ohlcv import bronze_binance_ohlcv
+from market_pipeline.resources.cex_clients import BinanceClient
 
 
 class TestBronzeBinanceOHLCV:
@@ -412,7 +427,7 @@ from datetime import datetime
 
 from dagster import build_asset_context
 
-from crypto_pipeline.assets.silver.ohlcv_normalized import silver_ohlcv_normalized
+from market_pipeline.assets.silver.ohlcv_normalized import silver_ohlcv_normalized
 
 
 class TestSilverOHLCVNormalized:
@@ -513,7 +528,7 @@ import httpx
 import respx
 from datetime import datetime, timedelta
 
-from crypto_pipeline.resources.cex_clients import BinanceClient
+from market_pipeline.resources.cex_clients import BinanceClient
 
 
 class TestBinanceClient:
@@ -625,9 +640,9 @@ from dagster import (
     AssetSelection,
 )
 
-from crypto_pipeline.definitions import defs
-from crypto_pipeline.assets.bronze import bronze_binance_ohlcv
-from crypto_pipeline.assets.silver import silver_ohlcv_normalized
+from market_pipeline.definitions import defs
+from market_pipeline.assets.bronze import bronze_binance_ohlcv
+from market_pipeline.assets.silver import silver_ohlcv_normalized
 
 
 class TestPipelineFlow:
@@ -662,7 +677,7 @@ class TestPipelineFlow:
     @pytest.mark.slow
     def test_full_daily_job(self, temp_warehouse):
         """Test full daily ingestion job."""
-        from crypto_pipeline.jobs import daily_ingestion_job
+        from market_pipeline.jobs import daily_ingestion_job
         
         result = daily_ingestion_job.execute_in_process(
             partition_key="2024-01-01",
@@ -686,7 +701,7 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
-from crypto_pipeline.types.ohlcv import OHLCVRecord
+from market_pipeline.types.ohlcv import OHLCVRecord
 
 
 @pytest.fixture
@@ -790,7 +805,7 @@ jobs:
       
       - name: Run unit tests
         run: |
-          pytest tests/unit -v --cov=crypto_pipeline --cov-report=xml
+          pytest tests/unit -v --cov=market_pipeline --cov-report=xml
       
       - name: Upload coverage
         uses: codecov/codecov-action@v4
