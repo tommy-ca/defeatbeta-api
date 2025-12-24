@@ -1,10 +1,53 @@
 # 05 - Data Schemas
 
-> Parquet schemas, SQL templates, and data dictionary
+> Parquet schemas, SQL templates, and data dictionary for multi-asset tables
 
 ## Parquet Schemas (PyArrow)
 
-### OHLCV Schema
+### FX Rates Schema
+
+```python
+FX_RATES_SCHEMA = pa.schema([
+    ('timestamp', pa.timestamp('us', tz='UTC')),
+    ('base', pa.string()),
+    ('quote', pa.string()),
+    ('rate', pa.float64()),
+    ('source', pa.string()),
+])
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| timestamp | timestamp[us, UTC] | Rate timestamp |
+| base | string | Base currency (e.g., EUR) |
+| quote | string | Quote currency (e.g., USD) |
+| rate | float64 | Base/quote rate |
+| source | string | Data source/provider |
+
+### Equities Prices Schema
+
+```python
+EQUITIES_PRICES_SCHEMA = pa.schema([
+    ('report_date', pa.date32()),
+    ('symbol', pa.string()),
+    ('open', pa.float64()),
+    ('high', pa.float64()),
+    ('low', pa.float64()),
+    ('close', pa.float64()),
+    ('volume', pa.int64()),
+    ('source', pa.string()),
+])
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| report_date | date32 | Trading date |
+| symbol | string | Equity ticker |
+| open/high/low/close | float64 | Daily OHLC |
+| volume | int64 | Shares traded |
+| source | string | Data source/provider |
+
+### CEX OHLCV Schema
 
 ```python
 import pyarrow as pa
@@ -36,7 +79,7 @@ OHLCV_SCHEMA = pa.schema([
 | quote_volume | float64 | Quote asset volume (USD value) |
 | trades_count | int64 | Number of trades in period |
 
-### Funding Rate Schema
+### CEX Funding Rate Schema
 
 ```python
 FUNDING_RATE_SCHEMA = pa.schema([
@@ -60,7 +103,7 @@ FUNDING_RATE_SCHEMA = pa.schema([
 | mark_price | float64 | Mark price at settlement |
 | index_price | float64 | Index (spot) price at settlement |
 
-### Open Interest Schema
+### CEX Open Interest Schema
 
 ```python
 OPEN_INTEREST_SCHEMA = pa.schema([
@@ -80,7 +123,7 @@ OPEN_INTEREST_SCHEMA = pa.schema([
 | open_interest | float64 | Open interest in contracts/coins |
 | open_interest_value | float64 | Open interest in USD |
 
-### Liquidation Schema
+### CEX Liquidation Schema
 
 ```python
 LIQUIDATION_SCHEMA = pa.schema([
@@ -104,7 +147,7 @@ LIQUIDATION_SCHEMA = pa.schema([
 | price | float64 | Liquidation price |
 | value | float64 | Liquidation value in USD |
 
-### Token Info Schema
+### CEX Token Info Schema
 
 ```python
 TOKEN_INFO_SCHEMA = pa.schema([
@@ -138,7 +181,7 @@ TOKEN_INFO_SCHEMA = pa.schema([
 | description | string | Project description |
 | updated_at | timestamp | Last update time |
 
-### Exchange Info Schema
+### CEX Exchange Info Schema
 
 ```python
 EXCHANGE_INFO_SCHEMA = pa.schema([
@@ -157,9 +200,65 @@ EXCHANGE_INFO_SCHEMA = pa.schema([
 ])
 ```
 
+### DEX Pools Schema
+
+```python
+DEX_POOLS_SCHEMA = pa.schema([
+    ('chain', pa.string()),
+    ('pool_address', pa.string()),
+    ('token0', pa.string()),
+    ('token1', pa.string()),
+    ('fee_tier', pa.float64()),
+    ('created_at', pa.timestamp('us', tz='UTC')),
+    ('source', pa.string()),
+])
+```
+
+### DEX Swaps Schema
+
+```python
+DEX_SWAPS_SCHEMA = pa.schema([
+    ('timestamp', pa.timestamp('us', tz='UTC')),
+    ('chain', pa.string()),
+    ('pool_address', pa.string()),
+    ('tx_hash', pa.string()),
+    ('amount0', pa.float64()),
+    ('amount1', pa.float64()),
+    ('price', pa.float64()),
+    ('side', pa.string()),
+])
+```
+
+### Bond Yields Schema
+
+```python
+BOND_YIELDS_SCHEMA = pa.schema([
+    ('report_date', pa.date32()),
+    ('curve', pa.string()),
+    ('tenor', pa.string()),
+    ('yield', pa.float64()),
+    ('source', pa.string()),
+])
+```
+
+### Bond Reference Schema
+
+```python
+BOND_REFERENCE_SCHEMA = pa.schema([
+    ('symbol', pa.string()),
+    ('issuer', pa.string()),
+    ('isin', pa.string()),
+    ('cusip', pa.string()),
+    ('coupon', pa.float64()),
+    ('maturity_date', pa.date32()),
+    ('currency', pa.string()),
+    ('source', pa.string()),
+])
+```
+
 ## SQL Query Templates
 
-### select_ohlcv.sql
+### select_cex_ohlcv.sql
 
 ```sql
 -- Select OHLCV data for a symbol
@@ -181,7 +280,7 @@ ORDER BY timestamp DESC
 LIMIT {limit}
 ```
 
-### select_ohlcv_date_range.sql
+### select_cex_ohlcv_date_range.sql
 
 ```sql
 -- Select OHLCV data within date range
@@ -418,6 +517,58 @@ All SQL templates in this document use string interpolation for readability. For
 2. **Use parameterized queries** where DuckDB supports them (see 04-client-library.md)
 3. **Risk is limited**: Queries target read-only parquet files over HTTP
 
+### select_fx_rates.sql
+
+```sql
+-- Select FX spot rates for a pair
+SELECT 
+    timestamp,
+    base,
+    quote,
+    rate,
+    source
+FROM '{url}'
+WHERE base || quote = '{pair}'
+ORDER BY timestamp DESC
+LIMIT {limit}
+```
+
+### select_bond_yields.sql
+
+```sql
+-- Select bond yields for a curve or symbol
+SELECT 
+    report_date,
+    curve,
+    tenor,
+    yield,
+    source
+FROM '{url}'
+WHERE curve = '{curve}'
+ORDER BY report_date DESC
+LIMIT {limit}
+```
+
+### select_dex_swaps.sql
+
+```sql
+-- Select DEX swaps for a pool
+SELECT 
+    timestamp,
+    chain,
+    pool_address,
+    tx_hash,
+    amount0,
+    amount1,
+    price,
+    side
+FROM '{url}'
+WHERE pool_address = '{pool}'
+    AND chain = '{chain}'
+ORDER BY timestamp DESC
+LIMIT {limit}
+```
+
 ## Data Dictionary
 
 ### Symbol Naming Convention
@@ -439,10 +590,18 @@ All SQL templates in this document use string interpolation for readability. For
 | Identifier | Full Name | API Type |
 |------------|-----------|----------|
 | binance | Binance | REST + WebSocket |
-| coinbase | Coinbase Pro | REST |
+| coinbase | Coinbase | REST |
 | okx | OKX | REST + WebSocket |
 | bybit | Bybit | REST + WebSocket |
-| aggregated | Cross-exchange average | Computed |
+| aggregated | Cross-venue average | Computed |
+
+### DEX Chains
+
+| Chain | Description |
+|-------|-------------|
+| ethereum | Ethereum mainnet |
+| arbitrum | Arbitrum L2 |
+| base | Base L2 |
 
 ### Token Categories
 
@@ -460,10 +619,12 @@ All SQL templates in this document use string interpolation for readability. For
 
 | Interval | Table | Update Frequency |
 |----------|-------|------------------|
-| 1m | ohlcv_1m | Every minute |
-| 1h | ohlcv_hourly | Every hour |
-| 1d | ohlcv_daily | Daily |
-| 8h | funding_rates | Every 8 hours |
+| 1h | cex_ohlcv_hourly | Every hour |
+| 1d | equities_prices | Daily |
+| 1d | fx_rates_daily | Daily |
+| 1d | cex_ohlcv_daily | Daily |
+| 8h | cex_funding_rates | Every 8 hours |
+| 1d | bond_yields_daily | Daily (trading days) |
 
 ### Null Value Handling
 
@@ -477,20 +638,25 @@ All SQL templates in this document use string interpolation for readability. For
 ## Schema Registry
 
 ```python
-# defeatbeta_crypto/storage/schema.py
+# defeatbeta_api/storage/schema.py
 
 import pyarrow as pa
 from typing import Dict
 
 SCHEMAS: Dict[str, pa.Schema] = {
-    'ohlcv_daily': OHLCV_SCHEMA,
-    'ohlcv_hourly': OHLCV_SCHEMA,
-    'ohlcv_1m': OHLCV_SCHEMA,
-    'funding_rates': FUNDING_RATE_SCHEMA,
-    'open_interest': OPEN_INTEREST_SCHEMA,
-    'liquidations': LIQUIDATION_SCHEMA,
-    'token_info': TOKEN_INFO_SCHEMA,
-    'exchange_info': EXCHANGE_INFO_SCHEMA,
+    'equities_prices': EQUITIES_PRICES_SCHEMA,
+    'fx_rates_daily': FX_RATES_SCHEMA,
+    'cex_ohlcv_daily': OHLCV_SCHEMA,
+    'cex_ohlcv_hourly': OHLCV_SCHEMA,
+    'cex_funding_rates': FUNDING_RATE_SCHEMA,
+    'cex_open_interest': OPEN_INTEREST_SCHEMA,
+    'cex_liquidations': LIQUIDATION_SCHEMA,
+    'cex_token_info': TOKEN_INFO_SCHEMA,
+    'cex_exchange_info': EXCHANGE_INFO_SCHEMA,
+    'dex_pools': DEX_POOLS_SCHEMA,
+    'dex_swaps': DEX_SWAPS_SCHEMA,
+    'bond_yields_daily': BOND_YIELDS_SCHEMA,
+    'bond_reference': BOND_REFERENCE_SCHEMA,
 }
 
 def get_schema(table_name: str) -> pa.Schema:

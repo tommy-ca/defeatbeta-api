@@ -1,6 +1,6 @@
 # 02 - Data Pipeline
 
-> Modern Python batch pipeline with Dagster orchestration
+> Modern Python batch pipeline with Dagster orchestration for multi-asset data
 
 ## Design Philosophy
 
@@ -23,15 +23,23 @@ This pipeline follows modern data engineering principles:
 | Airflow | Mature, widely adopted | Task-centric, complex setup | Too heavy |
 | dlt | Lightweight, ELT focused | Limited orchestration | Too simple |
 
+## Asset Coverage
+
+- **Equities**: Daily prices, corporate actions, fundamentals (from equity providers).
+- **Forex**: Spot rates with daily snapshots (major/minor/exotic pairs).
+- **Crypto CEX**: OHLCV, funding, open interest, liquidations.
+- **Crypto DEX**: Swap events, pool metadata, liquidity snapshots.
+- **Bonds**: Yield curves, reference data, pricing/yield history where available.
+
 ## Pipeline Repository Structure
 
 ```
-defeatbeta-crypto-pipeline/
+defeatbeta-market-pipeline/
 ├── pyproject.toml
 ├── README.md
 ├── .env.example
 │
-├── crypto_pipeline/
+├── market_pipeline/
 │   ├── __init__.py
 │   ├── definitions.py          # Dagster definitions entry point
 │   │
@@ -39,22 +47,32 @@ defeatbeta-crypto-pipeline/
 │   │   ├── __init__.py
 │   │   ├── bronze/             # Raw data layer
 │   │   │   ├── __init__.py
-│   │   │   ├── ohlcv.py
-│   │   │   ├── funding_rates.py
-│   │   │   ├── open_interest.py
-│   │   │   └── token_info.py
+│   │   │   ├── equities_prices.py
+│   │   │   ├── fx_rates.py
+│   │   │   ├── cex_ohlcv.py
+│   │   │   ├── cex_funding_rates.py
+│   │   │   ├── cex_open_interest.py
+│   │   │   ├── dex_swaps.py
+│   │   │   ├── dex_pools.py
+│   │   │   └── bond_yields.py
 │   │   ├── silver/             # Cleaned/normalized layer
 │   │   │   ├── __init__.py
-│   │   │   ├── ohlcv_normalized.py
-│   │   │   ├── funding_normalized.py
-│   │   │   └── aggregated.py
+│   │   │   ├── equities_normalized.py
+│   │   │   ├── fx_normalized.py
+│   │   │   ├── cex_normalized.py
+│   │   │   ├── dex_normalized.py
+│   │   │   └── bond_normalized.py
 │   │   └── gold/               # Published layer
 │   │       ├── __init__.py
 │   │       └── huggingface_datasets.py
 │   │
 │   ├── resources/              # Dagster resources (clients, connections)
 │   │   ├── __init__.py
+│   │   ├── equity_clients.py   # Equity data providers
+│   │   ├── fx_clients.py       # FX data providers
 │   │   ├── cex_clients.py      # Exchange API clients
+│   │   ├── dex_indexers.py     # DEX indexers / RPC clients
+│   │   ├── bond_clients.py     # Yield/price providers
 │   │   ├── storage.py          # Parquet I/O
 │   │   └── huggingface.py      # HuggingFace publisher
 │   │
@@ -105,22 +123,24 @@ defeatbeta-crypto-pipeline/
 ## 1. Dagster Definitions Entry Point
 
 ```python
-# crypto_pipeline/definitions.py
-"""Dagster definitions - the main entry point for the pipeline."""
+# market_pipeline/definitions.py
+"""Dagster definitions - the main entry point for the multi-asset pipeline."""
 
 from dagster import Definitions, load_assets_from_modules
 
-from crypto_pipeline.assets import bronze, silver, gold
-from crypto_pipeline.resources import (
+from market_pipeline.assets import bronze, silver, gold
+from market_pipeline.resources import (
+    EquityProvider,
+    FxRatesProvider,
     BinanceClient,
-    CoinbaseClient,
-    OKXClient,
+    DexIndexer,
+    BondRatesProvider,
     ParquetIOManager,
     HuggingFaceResource,
 )
-from crypto_pipeline.jobs import daily_ingestion_job, backfill_job
-from crypto_pipeline.schedules import daily_schedule
-from crypto_pipeline.sensors import new_data_sensor
+from market_pipeline.jobs import daily_ingestion_job, backfill_job
+from market_pipeline.schedules import daily_schedule
+from market_pipeline.sensors import new_data_sensor
 
 # Load all assets from modules
 bronze_assets = load_assets_from_modules([bronze], group_name="bronze")
@@ -130,9 +150,11 @@ gold_assets = load_assets_from_modules([gold], group_name="gold")
 defs = Definitions(
     assets=[*bronze_assets, *silver_assets, *gold_assets],
     resources={
+        "equity_provider": EquityProvider(),
+        "fx_provider": FxRatesProvider(),
         "binance_client": BinanceClient(),
-        "coinbase_client": CoinbaseClient(),
-        "okx_client": OKXClient(),
+        "dex_indexer": DexIndexer(),
+        "bond_provider": BondRatesProvider(),
         "parquet_io": ParquetIOManager(base_path="/data/warehouse"),
         "huggingface": HuggingFaceResource(),
     },
@@ -147,7 +169,7 @@ defs = Definitions(
 ## 2. Type Definitions (Pydantic Models)
 
 ```python
-# crypto_pipeline/types/ohlcv.py
+# market_pipeline/types/ohlcv.py
 """Type definitions for OHLCV data."""
 
 from datetime import datetime
@@ -209,7 +231,7 @@ class OHLCVDataset(BaseModel):
         )
 
 
-# crypto_pipeline/types/config.py
+# market_pipeline/types/config.py
 """Configuration types."""
 
 from pydantic import BaseModel, SecretStr
@@ -259,7 +281,7 @@ class PipelineConfig(BaseModel):
 ## 3. Dagster Resources (Dependency Injection)
 
 ```python
-# crypto_pipeline/resources/cex_clients.py
+# market_pipeline/resources/cex_clients.py
 """CEX API client resources."""
 
 from dagster import ConfigurableResource, InitResourceContext
@@ -271,7 +293,7 @@ import pandas as pd
 import asyncio
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from crypto_pipeline.utils.rate_limiter import AsyncRateLimiter
+from market_pipeline.utils.rate_limiter import AsyncRateLimiter
 
 
 class BinanceClient(ConfigurableResource):
@@ -411,7 +433,7 @@ class BinanceClient(ConfigurableResource):
 ```
 
 ```python
-# crypto_pipeline/resources/storage.py
+# market_pipeline/resources/storage.py
 """Parquet storage resource."""
 
 from dagster import ConfigurableIOManager, InputContext, OutputContext
@@ -478,7 +500,7 @@ class ParquetIOManager(ConfigurableIOManager):
 ## 4. Bronze Layer Assets (Raw Data Ingestion)
 
 ```python
-# crypto_pipeline/assets/bronze/ohlcv.py
+# market_pipeline/assets/bronze/ohlcv.py
 """Bronze layer: Raw OHLCV data from exchanges."""
 
 from dagster import (
@@ -491,7 +513,7 @@ from dagster import (
 import pandas as pd
 from datetime import datetime, timedelta
 
-from crypto_pipeline.resources.cex_clients import BinanceClient
+from market_pipeline.resources.cex_clients import BinanceClient
 
 # Daily partitions starting from 2020
 daily_partitions = DailyPartitionsDefinition(start_date="2020-01-01")
@@ -589,7 +611,7 @@ def bronze_okx_ohlcv(
 ```
 
 ```python
-# crypto_pipeline/assets/bronze/funding_rates.py
+# market_pipeline/assets/bronze/funding_rates.py
 """Bronze layer: Raw funding rate data."""
 
 from dagster import asset, AssetExecutionContext, DailyPartitionsDefinition, Output
@@ -646,15 +668,15 @@ def bronze_binance_funding(
 ## 5. Silver Layer Assets (Cleaned & Normalized)
 
 ```python
-# crypto_pipeline/assets/silver/ohlcv_normalized.py
+# market_pipeline/assets/silver/ohlcv_normalized.py
 """Silver layer: Normalized and validated OHLCV data."""
 
 from dagster import asset, AssetExecutionContext, AssetIn, Output
 import pandas as pd
 import numpy as np
 
-from crypto_pipeline.types.ohlcv import OHLCVRecord
-from crypto_pipeline.utils.validators import validate_ohlcv
+from market_pipeline.types.ohlcv import OHLCVRecord
+from market_pipeline.utils.validators import validate_ohlcv
 
 
 @asset(
@@ -777,14 +799,14 @@ def silver_ohlcv_aggregated(
 ## 6. Gold Layer Assets (Published Datasets)
 
 ```python
-# crypto_pipeline/assets/gold/huggingface_datasets.py
+# market_pipeline/assets/gold/huggingface_datasets.py
 """Gold layer: Published datasets to HuggingFace."""
 
 from dagster import asset, AssetExecutionContext, AssetIn, Output
 import pandas as pd
 from pathlib import Path
 
-from crypto_pipeline.resources.huggingface import HuggingFaceResource
+from market_pipeline.resources.huggingface import HuggingFaceResource
 
 
 @asset(
@@ -840,7 +862,7 @@ def gold_huggingface_ohlcv(
 ## 7. Schedules and Jobs
 
 ```python
-# crypto_pipeline/schedules/daily_schedule.py
+# market_pipeline/schedules/daily_schedule.py
 """Schedule definitions."""
 
 from dagster import (
@@ -885,7 +907,7 @@ publish_schedule = ScheduleDefinition(
 ```
 
 ```python
-# crypto_pipeline/jobs/backfill_job.py
+# market_pipeline/jobs/backfill_job.py
 """Backfill job for historical data."""
 
 from dagster import define_asset_job
@@ -906,7 +928,7 @@ backfill_job = define_asset_job(
 ## 8. Utilities
 
 ```python
-# crypto_pipeline/utils/rate_limiter.py
+# market_pipeline/utils/rate_limiter.py
 """Async rate limiter for API calls."""
 
 import asyncio
@@ -940,7 +962,7 @@ class AsyncRateLimiter:
 ```
 
 ```python
-# crypto_pipeline/utils/validators.py
+# market_pipeline/utils/validators.py
 """Data validation utilities."""
 
 from dataclasses import dataclass
@@ -1007,13 +1029,13 @@ def validate_ohlcv(df: pd.DataFrame) -> ValidationResult:
 pip install -e ".[dev]"
 
 # Start Dagster UI (dagit)
-dagster dev -m crypto_pipeline.definitions
+dagster dev -m market_pipeline.definitions
 
 # Run a specific job
-dagster job execute -m crypto_pipeline.definitions -j daily_ingestion_job
+dagster job execute -m market_pipeline.definitions -j daily_ingestion_job
 
 # Backfill historical data
-dagster job backfill -m crypto_pipeline.definitions -j backfill_job \
+dagster job backfill -m market_pipeline.definitions -j backfill_job \
     --partition-range 2024-01-01...2024-12-01
 ```
 
@@ -1028,7 +1050,7 @@ WORKDIR /app
 COPY pyproject.toml .
 RUN pip install -e .
 
-COPY crypto_pipeline/ crypto_pipeline/
+COPY market_pipeline/ market_pipeline/
 
 # Dagster daemon for schedules/sensors
 CMD ["dagster-daemon", "run"]
@@ -1041,7 +1063,7 @@ version: "3.8"
 services:
   dagster-webserver:
     build: .
-    command: dagster-webserver -h 0.0.0.0 -p 3000 -m crypto_pipeline.definitions
+    command: dagster-webserver -h 0.0.0.0 -p 3000 -m market_pipeline.definitions
     ports:
       - "3000:3000"
     environment:
@@ -1066,7 +1088,7 @@ services:
 
 ```toml
 [project]
-name = "defeatbeta-crypto-pipeline"
+name = "defeatbeta-market-pipeline"
 version = "0.1.0"
 requires-python = ">=3.10"
 

@@ -1,22 +1,23 @@
 # 03 - HuggingFace Publishing
 
-> Dataset publishing workflow and HuggingFace integration
+> Dataset publishing workflow and HuggingFace integration for multi-asset tables
 
 ## Dataset Structure
 
 ```
-datasets/yourorg/crypto-cex-data/
+datasets/yourorg/market-data/
 ├── README.md                    # Dataset card (auto-generated)
 ├── spec.json                    # Metadata and version info
 └── data/
-    ├── ohlcv_daily.parquet      # Daily OHLCV (~500MB, all symbols, 5+ years)
-    ├── ohlcv_hourly.parquet     # Hourly OHLCV (~2GB, all symbols, 1 year)
-    ├── ohlcv_1m.parquet         # 1-minute OHLCV (~10GB, top 50, 30 days)
-    ├── funding_rates.parquet    # Funding rate history (~100MB)
-    ├── open_interest.parquet    # Open interest snapshots (~200MB)
-    ├── liquidations.parquet     # Liquidation events (~500MB)
-    ├── token_info.parquet       # Token metadata (~5MB)
-    └── exchange_info.parquet    # Exchange trading pairs (~1MB)
+    ├── equities_prices.parquet      # Daily equities OHLCV
+    ├── fx_rates_daily.parquet       # Daily FX spot rates
+    ├── cex_ohlcv_daily.parquet      # Daily crypto OHLCV
+    ├── cex_funding_rates.parquet    # Funding rate history
+    ├── cex_open_interest.parquet    # Open interest snapshots
+    ├── dex_swaps.parquet            # DEX swap events
+    ├── dex_pools.parquet            # DEX pool metadata
+    ├── bond_yields_daily.parquet    # Yield curve snapshots
+    └── bond_reference.parquet       # Bond reference data
 ```
 
 ## spec.json Schema
@@ -26,10 +27,12 @@ datasets/yourorg/crypto-cex-data/
   "update_time": "2025-12-07",
   "version": "1.0.0",
   "pipeline_version": "0.1.0",
+  "asset_classes": ["equities", "fx", "crypto_cex", "crypto_dex", "bonds"],
   "tables": [
     {
-      "name": "ohlcv_daily",
-      "description": "Daily OHLCV candlestick data",
+      "name": "equities_prices",
+      "description": "Daily equities OHLCV",
+      "asset_class": "equities",
       "row_count": 5000000,
       "size_bytes": 524288000,
       "date_range": {
@@ -38,8 +41,20 @@ datasets/yourorg/crypto-cex-data/
       }
     },
     {
-      "name": "funding_rates",
+      "name": "fx_rates_daily",
+      "description": "Daily FX spot rates",
+      "asset_class": "fx",
+      "row_count": 1000000,
+      "size_bytes": 104857600,
+      "date_range": {
+        "start": "2020-01-01",
+        "end": "2025-12-06"
+      }
+    },
+    {
+      "name": "cex_funding_rates",
       "description": "Perpetual futures funding rates",
+      "asset_class": "crypto_cex",
       "row_count": 1000000,
       "size_bytes": 104857600,
       "date_range": {
@@ -48,13 +63,14 @@ datasets/yourorg/crypto-cex-data/
       }
     }
   ],
-  "exchanges": ["binance", "coinbase", "okx", "bybit"],
+  "venues": ["binance", "coinbase", "okx", "bybit"],
+  "chains": ["ethereum", "arbitrum", "base"],
   "symbols_count": 500,
-  "symbols_sample": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+  "symbols_sample": ["AAPL", "EURUSD", "BTCUSDT"],
   "intervals": {
-    "ohlcv_daily": "1d",
-    "ohlcv_hourly": "1h",
-    "ohlcv_1m": "1m"
+    "equities_prices": "1d",
+    "fx_rates_daily": "1d",
+    "cex_ohlcv_daily": "1d"
   },
   "data_quality": {
     "validation_passed": true,
@@ -79,7 +95,7 @@ class HuggingFacePublisher:
     def __init__(self, repo_id: str, token: str = None):
         """
         Args:
-            repo_id: HuggingFace repo (e.g., 'yourorg/crypto-cex-data')
+            repo_id: HuggingFace repo (e.g., 'yourorg/market-data')
             token: HuggingFace API token (or from HF_TOKEN env var)
         """
         self.repo_id = repo_id
@@ -172,8 +188,8 @@ class HuggingFacePublisher:
                        pipeline_version: str) -> dict:
         """Generate spec.json content"""
         
-        # Extract unique exchanges and symbols from data
-        exchanges = self._extract_exchanges()
+        # Extract unique venues and symbols from data
+        venues = self._extract_venues()
         symbols = self._extract_symbols()
         
         return {
@@ -181,13 +197,13 @@ class HuggingFacePublisher:
             "version": "1.0.0",
             "pipeline_version": pipeline_version,
             "tables": table_metadata,
-            "exchanges": exchanges,
+            "venues": venues,
             "symbols_count": len(symbols),
             "symbols_sample": symbols[:10],
             "intervals": {
-                "ohlcv_daily": "1d",
-                "ohlcv_hourly": "1h",
-                "funding_rates": "8h"
+                "equities_prices": "1d",
+                "fx_rates_daily": "1d",
+                "cex_ohlcv_daily": "1d"
             },
             "data_quality": {
                 "validation_passed": True,
@@ -216,25 +232,25 @@ task_categories:
 language:
   - en
 tags:
-  - cryptocurrency
   - market-data
-  - trading
-  - binance
-  - defi
+  - equities
+  - forex
+  - cryptocurrency
+  - bonds
 size_categories:
   - 1M<n<10M
 ---
 
-# Crypto CEX Market Data
+# Multi-Asset Market Data
 
-High-quality cryptocurrency market data from major centralized exchanges.
+High-quality market data across equities, FX, crypto (CEX/DEX), and bonds.
 
 ## Overview
 
 - **Update Frequency**: Daily
 - **Last Updated**: {spec['update_time']}
-- **Exchanges**: {', '.join(spec['exchanges'])}
-- **Symbols**: {spec['symbols_count']} trading pairs
+- **Venues**: {', '.join(spec.get('venues', []))}
+- **Symbols**: {spec['symbols_count']} instruments/pairs
 
 ## Available Tables
 
@@ -252,30 +268,42 @@ conn = duckdb.connect()
 conn.execute("INSTALL httpfs; LOAD httpfs;")
 
 df = conn.execute(\"\"\"
-    SELECT * FROM 'https://huggingface.co/datasets/{self.repo_id}/resolve/main/data/ohlcv_daily.parquet'
-    WHERE symbol = 'BTCUSDT'
+    SELECT * FROM 'https://huggingface.co/datasets/{self.repo_id}/resolve/main/data/fx_rates_daily.parquet'
+    WHERE base = 'EUR' AND quote = 'USD'
     ORDER BY timestamp DESC
     LIMIT 100
 \"\"\").df()
 ```
 
-## With defeatbeta-crypto-api
+## With defeatbeta-api
 
 ```python
-from defeatbeta_crypto import Token
+from defeatbeta_api import Ticker
+from defeatbeta_api.data.fx import FXPair
+from defeatbeta_api.data.crypto import CryptoToken
+from defeatbeta_api.data.bond import Bond
 
-btc = Token("BTC")
+aapl = Ticker("AAPL")
+aapl.price()
+
+eurusd = FXPair("EURUSD")
+eurusd.rate()
+
+btc = CryptoToken("BTC")
 btc.ohlcv(interval="1d", limit=365)
-btc.funding_rate()
+
+ust = Bond("US10Y")
+ust.yield_curve()
 ```
 
 ## Data Sources
 
-Data is collected from official exchange APIs:
-- Binance (spot + futures)
-- Coinbase Pro
-- OKX
-- Bybit
+Data is collected from official and reputable sources:
+- Equities data providers (Yahoo Finance or equivalents)
+- FX rate providers (central banks or aggregators)
+- CEX APIs (Binance, Coinbase, OKX, Bybit)
+- DEX indexers (The Graph or chain indexers)
+- Bonds sources (Treasury yield data, bond reference data)
 
 ## License
 
@@ -303,15 +331,15 @@ Apache 2.0
             token=self.token
         )
     
-    def _extract_exchanges(self) -> list:
-        """Extract unique exchanges from uploaded data"""
+    def _extract_venues(self) -> list:
+        """Extract unique venues from uploaded data"""
         # Would query the parquet files
         return ["binance", "coinbase", "okx", "bybit"]
     
     def _extract_symbols(self) -> list:
         """Extract unique symbols from uploaded data"""
         # Would query the parquet files
-        return ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+        return ["AAPL", "EURUSD", "BTCUSDT", "US10Y", "ETHUSDC"]
 ```
 
 ## CI/CD Integration
@@ -329,7 +357,7 @@ on:
 
 env:
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
-  HF_REPO_ID: yourorg/crypto-cex-data
+  HF_REPO_ID: yourorg/market-data
 
 jobs:
   run-pipeline:
@@ -348,11 +376,8 @@ jobs:
         run: |
           pip install -e ".[dev]"
           
-      - name: Run daily OHLCV pipeline
+      - name: Run daily multi-asset pipeline
         run: python scripts/run_daily_pipeline.py
-        
-      - name: Run funding rate pipeline
-        run: python scripts/run_funding_pipeline.py
         
       - name: Validate data quality
         run: python scripts/validate_data.py
@@ -392,11 +417,13 @@ def main():
     data_dir = Path("./data")
     
     parquet_files = {
-        'ohlcv_daily': data_dir / 'ohlcv_daily.parquet',
-        'ohlcv_hourly': data_dir / 'ohlcv_hourly.parquet',
-        'funding_rates': data_dir / 'funding_rates.parquet',
-        'open_interest': data_dir / 'open_interest.parquet',
-        'token_info': data_dir / 'token_info.parquet',
+        'equities_prices': data_dir / 'equities_prices.parquet',
+        'fx_rates_daily': data_dir / 'fx_rates_daily.parquet',
+        'cex_ohlcv_daily': data_dir / 'cex_ohlcv_daily.parquet',
+        'cex_funding_rates': data_dir / 'cex_funding_rates.parquet',
+        'dex_swaps': data_dir / 'dex_swaps.parquet',
+        'bond_yields_daily': data_dir / 'bond_yields_daily.parquet',
+        'bond_reference': data_dir / 'bond_reference.parquet',
     }
     
     # Filter to only existing files
@@ -455,9 +482,9 @@ For schema changes, maintain both versions temporarily:
 
 ```
 data/
-├── ohlcv_daily.parquet      # Current version
+├── equities_prices.parquet      # Current version
 └── v1/
-    └── ohlcv_daily.parquet  # Previous version (deprecated)
+    └── equities_prices.parquet  # Previous version (deprecated)
 ```
 
 ## Monitoring
@@ -470,7 +497,7 @@ def check_data_freshness():
     import requests
     from datetime import datetime, timedelta
     
-    spec_url = "https://huggingface.co/datasets/yourorg/crypto-cex-data/resolve/main/spec.json"
+    spec_url = "https://huggingface.co/datasets/yourorg/market-data/resolve/main/spec.json"
     spec = requests.get(spec_url).json()
     
     update_time = datetime.strptime(spec['update_time'], "%Y-%m-%d")

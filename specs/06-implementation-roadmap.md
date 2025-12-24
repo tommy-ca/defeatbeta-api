@@ -1,10 +1,10 @@
 # 06 - Implementation Roadmap
 
-> Phased delivery plan for the Crypto CEX Data API (Dagster-based)
+> Phased delivery plan for the Multi-Asset Market Data API (Dagster-based)
 
 ## Overview
 
-Total estimated timeline: **10-12 weeks**
+Total estimated timeline: **12-14 weeks**
 
 **Technology Stack:**
 - **Orchestration**: Dagster (asset-centric data pipelines)
@@ -15,26 +15,26 @@ Total estimated timeline: **10-12 weeks**
 
 ```
 Phase 1: Dagster Foundation      [Week 1-2]  ████████░░░░░░░░░░░░░░░░
-Phase 2: Bronze Layer Assets     [Week 3-4]  ░░░░░░░░████████░░░░░░░░
-Phase 3: Silver & Gold Layers    [Week 5-6]  ░░░░░░░░░░░░░░░░████████
-Phase 4: Client Library          [Week 7-8]  ░░░░░░░░░░░░░░░░░░░░░░░░
-Phase 5: Analytics & Reports     [Week 9-10] ░░░░░░░░░░░░░░░░░░░░░░░░
-Phase 6: Production & Scaling    [Week 11+]  ░░░░░░░░░░░░░░░░░░░░░░░░
+Phase 2: Bronze Layer Assets     [Week 3-5]  ░░░░░░░░████████░░░░░░░░
+Phase 3: Silver & Gold Layers    [Week 6-7]  ░░░░░░░░░░░░░░░░████████
+Phase 4: Client Library          [Week 8-9]  ░░░░░░░░░░░░░░░░░░░░░░░░
+Phase 5: Analytics & Reports     [Week 10-11]░░░░░░░░░░░░░░░░░░░░░░░░
+Phase 6: Production & Scaling    [Week 12+]  ░░░░░░░░░░░░░░░░░░░░░░░░
 ```
 
 ---
 
 ## Phase 1: Dagster Foundation (Week 1-2)
 
-**Goal**: Set up Dagster project structure with resources and type definitions.
+**Goal**: Set up Dagster project structure with resources and type definitions for all assets.
 
 ### Deliverables
 
 - [ ] **P1.1** Project scaffolding
   ```
-  defeatbeta-crypto-pipeline/
+  defeatbeta-market-pipeline/
   ├── pyproject.toml
-  ├── crypto_pipeline/
+  ├── market_pipeline/
   │   ├── definitions.py      # Dagster entry point
   │   ├── assets/
   │   ├── resources/
@@ -50,7 +50,8 @@ Phase 6: Production & Scaling    [Week 11+]  ░░░░░░░░░░░�
   - Type coercion and validation
 
 - [ ] **P1.3** Dagster resources
-  - `BinanceClient` - async HTTP client with rate limiting
+  - `EquityProvider`, `FxRatesProvider`, `BondRatesProvider`
+  - `CexClient`, `DexIndexer` - async clients with rate limiting
   - `ParquetIOManager` - custom I/O for partitioned parquet
   - `HuggingFaceResource` - publishing client
 
@@ -63,10 +64,10 @@ Phase 6: Production & Scaling    [Week 11+]  ░░░░░░░░░░░�
 
 ```python
 # Dagster dev server starts successfully
-# dagster dev -m crypto_pipeline.definitions
+# dagster dev -m market_pipeline.definitions
 
 # Resources are injectable
-from crypto_pipeline.resources import BinanceClient
+from market_pipeline.resources import BinanceClient
 
 client = BinanceClient(requests_per_minute=1200)
 # Client can be used in asset functions
@@ -88,26 +89,33 @@ dependencies = [
 
 ## Phase 2: Bronze Layer Assets (Week 3-4)
 
-**Goal**: Implement raw data ingestion assets with daily partitioning.
+**Goal**: Implement raw data ingestion assets with daily partitioning across asset classes.
 
 ### Deliverables
 
-- [ ] **P2.1** Binance bronze assets
-  - `bronze_binance_ohlcv` - daily partitioned OHLCV
-  - `bronze_binance_funding` - funding rate history
-  - `bronze_binance_oi` - open interest snapshots
+- [ ] **P2.1** Equities/FX/Bonds bronze assets
+  - `bronze_equities_prices` - daily OHLCV
+  - `bronze_fx_rates` - daily spot rates
+  - `bronze_bond_yields` - daily yield curve
+- [ ] **P2.2** CEX bronze assets
+  - `bronze_cex_ohlcv` - daily partitioned OHLCV
+  - `bronze_cex_funding` - funding rate history
+  - `bronze_cex_oi` - open interest snapshots
+- [ ] **P2.3** DEX bronze assets
+  - `bronze_dex_swaps` - swap events
+  - `bronze_dex_pools` - pool metadata
 
-- [ ] **P2.2** Partition definitions
+- [ ] **P2.4** Partition definitions
   - Daily partitions starting from 2020-01-01
   - Partition key format: YYYY-MM-DD
   - Backfill support
 
-- [ ] **P2.3** Error handling
+- [ ] **P2.5** Error handling
   - Per-symbol error isolation
   - Partial success handling
   - Retry logic for transient failures
 
-- [ ] **P2.4** Asset metadata
+- [ ] **P2.6** Asset metadata
   - Row counts, symbols, fetch timestamps
   - Visible in Dagster UI
 
@@ -115,7 +123,7 @@ dependencies = [
 
 ```python
 # Bronze assets materialize successfully
-# dagster asset materialize -m crypto_pipeline.definitions \
+# dagster asset materialize -m market_pipeline.definitions \
 #   --select bronze_binance_ohlcv --partition 2024-01-01
 
 # Dagster UI shows asset lineage and metadata
@@ -140,9 +148,9 @@ dependencies = [
 ### Deliverables
 
 - [ ] **P3.1** Silver layer assets
-  - `silver_ohlcv_normalized` - cleaned, validated OHLCV
-  - `silver_ohlcv_aggregated` - cross-exchange aggregation
-  - `silver_funding_normalized` - normalized funding rates
+  - `silver_equities_normalized`, `silver_fx_normalized`, `silver_bond_normalized`
+  - `silver_cex_normalized`, `silver_cex_aggregated`
+  - `silver_dex_normalized`
 
 - [ ] **P3.2** Data quality checks
   - OHLC relationship validation
@@ -151,7 +159,7 @@ dependencies = [
   - Asset freshness checks
 
 - [ ] **P3.3** Gold layer assets
-  - `gold_huggingface_ohlcv` - published dataset
+  - `gold_huggingface_market_data` - published dataset
   - spec.json generation
   - README generation
 
@@ -164,10 +172,10 @@ dependencies = [
 
 ```python
 # Full pipeline runs end-to-end
-# dagster job execute -m crypto_pipeline.definitions -j daily_ingestion_job
+# dagster job execute -m market_pipeline.definitions -j daily_ingestion_job
 
 # Data appears on HuggingFace
-# curl -I https://huggingface.co/datasets/yourorg/crypto-cex-data/resolve/main/spec.json
+# curl -I https://huggingface.co/datasets/yourorg/market-data/resolve/main/spec.json
 ```
 
 ### Dependencies
@@ -182,14 +190,14 @@ dependencies = [
 
 ## Phase 4: Client Library (Week 7-8)
 
-**Goal**: Build the consumer library that queries HuggingFace datasets.
+**Goal**: Build the consumer library that queries HuggingFace datasets across assets.
 
 ### Deliverables
 
 - [ ] **P4.1** Client library scaffolding
   ```
-  defeatbeta-crypto-api/
-  ├── defeatbeta_crypto/
+  defeatbeta-api/
+  ├── defeatbeta_api/
   │   ├── client/
   │   ├── data/
   │   └── utils/
@@ -201,11 +209,12 @@ dependencies = [
   - cache_httpfs configuration
   - Cache invalidation on spec.json change
 
-- [ ] **P4.3** Token class
-  - `ohlcv()` - daily/hourly candles
-  - `funding_rate()` - perpetual funding
-  - `open_interest()` - OI snapshots
-  - `info()` - token metadata
+- [ ] **P4.3** Asset classes
+  - `Ticker` - equities entry point
+  - `FXPair` - FX spot rates
+  - `CryptoToken` - CEX market data
+  - `DexPool` - DEX pool data
+  - `Bond` - bond yields/curves
 
 - [ ] **P4.4** SQL templates
   - Parameterized query files
@@ -214,9 +223,9 @@ dependencies = [
 ### Success Criteria
 
 ```python
-from defeatbeta_crypto import Token
+from defeatbeta_api import CryptoToken
 
-btc = Token("BTC")
+btc = CryptoToken("BTC")
 
 # Query data from HuggingFace via DuckDB
 ohlcv = btc.ohlcv(interval="1d", limit=30)
@@ -269,9 +278,9 @@ dependencies = [
 ### Success Criteria
 
 ```python
-from defeatbeta_crypto import Token
+from defeatbeta_api import CryptoToken
 
-btc = Token("BTC")
+btc = CryptoToken("BTC")
 vol = btc.volatility(window=30)
 btc.tearsheet(output="btc_report.html")
 ```
@@ -313,10 +322,10 @@ btc.tearsheet(output="btc_report.html")
 
 ```python
 # Multi-exchange data available
-from defeatbeta_crypto import Token
+from defeatbeta_api import CryptoToken
 
 for exchange in ["binance", "coinbase", "okx"]:
-    btc = Token("BTC", exchange=exchange)
+    btc = CryptoToken("BTC", exchange=exchange)
     print(f"{exchange}: {btc.ohlcv(limit=1)['close'].iloc[0]}")
 ```
 
@@ -424,9 +433,9 @@ for exchange in ["binance", "coinbase", "okx"]:
 
 ## Next Steps
 
-1. Create `defeatbeta-crypto-pipeline` repository
+1. Create `defeatbeta-market-pipeline` repository
 2. Set up Dagster project with `dagster project scaffold`
-3. Implement Pydantic types (`crypto_pipeline/types/`)
+3. Implement Pydantic types (`market_pipeline/types/`)
 4. Implement `BinanceClient` resource
 5. Create first bronze asset: `bronze_binance_ohlcv`
 

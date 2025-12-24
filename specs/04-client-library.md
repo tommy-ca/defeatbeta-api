@@ -5,8 +5,8 @@
 ## Library Structure
 
 ```
-defeatbeta-crypto-api/
-├── defeatbeta_crypto/
+defeatbeta-api/
+├── defeatbeta_api/
 │   ├── __init__.py              # Package init, welcome banner
 │   ├── __version__.py           # Version string
 │   ├── client/
@@ -16,18 +16,26 @@ defeatbeta-crypto-api/
 │   │   └── huggingface_client.py # HuggingFace URL resolution
 │   ├── data/
 │   │   ├── __init__.py
-│   │   ├── token.py             # Main Token class
+│   │   ├── ticker.py            # Equities entry point (Ticker)
+│   │   ├── fx.py                # FXPair class
+│   │   ├── crypto.py            # CryptoToken class (CEX)
+│   │   ├── dex.py               # DexPool class (DEX)
+│   │   ├── bond.py              # Bond class
 │   │   ├── market.py            # Market-wide queries
-│   │   ├── exchange.py          # Exchange-specific queries
+│   │   ├── venue.py             # Venue-specific queries
 │   │   ├── sql/
 │   │   │   ├── sql_loader.py
-│   │   │   ├── select_ohlcv.sql
-│   │   │   ├── select_funding.sql
-│   │   │   ├── select_oi.sql
+│   │   │   ├── select_equities_prices.sql
+│   │   │   ├── select_fx_rates.sql
+│   │   │   ├── select_cex_ohlcv.sql
+│   │   │   ├── select_cex_funding.sql
+│   │   │   ├── select_dex_swaps.sql
+│   │   │   ├── select_bond_yields.sql
 │   │   │   └── ...
 │   │   └── template/
 │   │       ├── token_categories.json
-│   │       └── exchange_symbols.json
+│   │       ├── exchange_symbols.json
+│   │       └── bond_reference.json
 │   ├── reports/
 │   │   ├── tearsheet.py
 │   │   └── tearsheet.html
@@ -46,20 +54,20 @@ defeatbeta-crypto-api/
 ### HuggingFace Client
 
 ```python
-# defeatbeta_crypto/client/huggingface_client.py
+# defeatbeta_api/client/huggingface_client.py
 
 from typing import Dict, Any
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from defeatbeta_crypto.utils.const import TABLES
+from defeatbeta_api.utils.const import TABLES
 
 class HuggingFaceClient:
     """Client for resolving HuggingFace dataset URLs"""
     
     def __init__(self, max_retries: int = 3, timeout: int = 30):
-        self.base_url = "https://huggingface.co/datasets/yourorg/crypto-cex-data"
+        self.base_url = "https://huggingface.co/datasets/yourorg/market-data"
         self.timeout = timeout
         self.session = requests.Session()
 
@@ -76,7 +84,7 @@ class HuggingFaceClient:
             response = self.session.get(
                 url,
                 timeout=self.timeout,
-                headers={"User-Agent": "defeatbeta-crypto/1.0"},
+                headers={"User-Agent": "defeatbeta-api/1.0"},
                 verify=True
             )
             response.raise_for_status()
@@ -109,7 +117,7 @@ class HuggingFaceClient:
 ### DuckDB Client (Singleton Pattern)
 
 ```python
-# defeatbeta_crypto/client/duckdb_client.py
+# defeatbeta_api/client/duckdb_client.py
 
 import logging
 import sys
@@ -121,8 +129,8 @@ from typing import Optional
 import duckdb
 import pandas as pd
 
-from defeatbeta_crypto import data_update_time
-from defeatbeta_crypto.client.duckdb_conf import Configuration
+from defeatbeta_api import data_update_time
+from defeatbeta_api.client.duckdb_conf import Configuration
 
 _instance = None
 _lock = Lock()
@@ -180,7 +188,7 @@ class DuckDBClient:
         """Clear cache if remote data is newer than cached"""
         try:
             current_spec = self.query(
-                "SELECT * FROM 'https://huggingface.co/datasets/yourorg/crypto-cex-data/resolve/main/spec.json'"
+                "SELECT * FROM 'https://huggingface.co/datasets/yourorg/market-data/resolve/main/spec.json'"
             )
             current_update_time = current_spec['update_time'].iloc[0]
             
@@ -221,33 +229,33 @@ class DuckDBClient:
             self.connection = None
 ```
 
-### Token Class (Main Entry Point)
+### CryptoToken Class (CEX Entry Point)
 
 ```python
-# defeatbeta_crypto/data/token.py
+# defeatbeta_api/data/crypto.py
 
 import logging
 from typing import Optional, List
 import pandas as pd
 import numpy as np
 
-from defeatbeta_crypto.client.duckdb_client import get_duckdb_client
-from defeatbeta_crypto.client.duckdb_conf import Configuration
-from defeatbeta_crypto.client.huggingface_client import HuggingFaceClient
-from defeatbeta_crypto.data.sql.sql_loader import load_sql
-from defeatbeta_crypto.utils.const import (
-    ohlcv_daily, ohlcv_hourly, funding_rates, 
-    open_interest, liquidations, token_info
+from defeatbeta_api.client.duckdb_client import get_duckdb_client
+from defeatbeta_api.client.duckdb_conf import Configuration
+from defeatbeta_api.client.huggingface_client import HuggingFaceClient
+from defeatbeta_api.data.sql.sql_loader import load_sql
+from defeatbeta_api.utils.const import (
+    cex_ohlcv_daily, cex_ohlcv_hourly, cex_funding_rates, 
+    cex_open_interest, cex_liquidations, cex_token_info
 )
 
-class Token:
-    """Main entry point for cryptocurrency market data
+class CryptoToken:
+    """Main entry point for cryptocurrency market data (CEX)
     
     Similar to defeatbeta_api.Ticker but for crypto assets.
     
     Example:
-        >>> from defeatbeta_crypto import Token
-        >>> btc = Token("BTC")
+        >>> from defeatbeta_api import CryptoToken
+        >>> btc = CryptoToken("BTC")
         >>> btc.ohlcv()  # Daily OHLCV data
         >>> btc.funding_rate()  # Perpetual funding rates
     """
@@ -259,7 +267,7 @@ class Token:
                  config: Optional[Configuration] = None):
         """
         Args:
-            symbol: Token symbol (e.g., 'BTC', 'ETH', 'SOL')
+            symbol: Crypto symbol (e.g., 'BTC', 'ETH', 'SOL')
             exchange: Filter to specific exchange (e.g., 'binance')
             http_proxy: HTTP proxy URL
             log_level: Logging level
@@ -302,7 +310,7 @@ class Token:
         Returns:
             DataFrame with columns: timestamp, open, high, low, close, volume
         """
-        table = ohlcv_daily if interval == "1d" else ohlcv_hourly
+        table = cex_ohlcv_daily if interval == "1d" else cex_ohlcv_hourly
         
         exchange_filter = f"AND exchange = '{self.exchange}'" if self.exchange else ""
         
@@ -333,7 +341,7 @@ class Token:
         exchange_filter = f"AND exchange = '{self.exchange}'" if self.exchange else ""
         
         return self._query_table(
-            funding_rates,
+            cex_funding_rates,
             "select_funding",
             exchange_filter=exchange_filter,
             limit=limit
@@ -348,7 +356,7 @@ class Token:
         exchange_filter = f"AND exchange = '{self.exchange}'" if self.exchange else ""
         
         return self._query_table(
-            open_interest,
+            cex_open_interest,
             "select_oi",
             exchange_filter=exchange_filter,
             limit=limit
@@ -363,7 +371,7 @@ class Token:
         exchange_filter = f"AND exchange = '{self.exchange}'" if self.exchange else ""
         
         return self._query_table(
-            liquidations,
+            cex_liquidations,
             "select_liquidations",
             exchange_filter=exchange_filter,
             days=days
@@ -436,11 +444,11 @@ class Token:
         # Would need to query both spot and futures prices
         raise NotImplementedError("Basis calculation requires spot/futures price comparison")
     
-    # =========== Token Info ===========
+    # =========== Crypto Token Info ===========
     
     def info(self) -> pd.DataFrame:
         """Get token metadata (name, category, market cap, etc.)"""
-        return self._query_table(token_info, "select_token_info")
+        return self._query_table(cex_token_info, "select_token_info")
     
     def market_cap(self) -> pd.DataFrame:
         """Get market capitalization history"""
@@ -463,7 +471,7 @@ class Token:
         Args:
             output: Output file path (default: {symbol}_report.html)
         """
-        from defeatbeta_crypto.reports import tearsheet
+        from defeatbeta_api.reports import tearsheet
         tearsheet.html(self, output=output or f"{self.symbol}_report.html")
 ```
 
@@ -557,29 +565,111 @@ def _validate_symbol(self, symbol: str) -> str:
     return normalized
 ```
 
+### FXPair Class
+
+```python
+# defeatbeta_api/data/fx.py
+from defeatbeta_api.client.duckdb_client import get_duckdb_client
+from defeatbeta_api.client.huggingface_client import HuggingFaceClient
+from defeatbeta_api.data.sql.sql_loader import load_sql
+from defeatbeta_api.utils.const import fx_rates_daily
+
+class FXPair:
+    """Entry point for FX spot rates (e.g., EURUSD, USDJPY)."""
+
+    def __init__(self, pair: str):
+        self.pair = pair.upper()
+        self.duckdb_client = get_duckdb_client()
+        self.hf_client = HuggingFaceClient()
+
+    def rate(self, limit: int = 365):
+        url = self.hf_client.get_url_path(fx_rates_daily)
+        sql = load_sql("select_fx_rates", url=url, pair=self.pair, limit=limit)
+        return self.duckdb_client.query(sql)
+```
+
+### Bond Class
+
+```python
+# defeatbeta_api/data/bond.py
+from defeatbeta_api.client.duckdb_client import get_duckdb_client
+from defeatbeta_api.client.huggingface_client import HuggingFaceClient
+from defeatbeta_api.data.sql.sql_loader import load_sql
+from defeatbeta_api.utils.const import bond_yields_daily
+
+class Bond:
+    """Entry point for bond curves and yields (e.g., US10Y)."""
+
+    def __init__(self, symbol: str):
+        self.symbol = symbol.upper()
+        self.duckdb_client = get_duckdb_client()
+        self.hf_client = HuggingFaceClient()
+
+    def yield_curve(self, limit: int = 365):
+        url = self.hf_client.get_url_path(bond_yields_daily)
+        sql = load_sql("select_bond_yields", url=url, symbol=self.symbol, limit=limit)
+        return self.duckdb_client.query(sql)
+```
+
+### DexPool Class
+
+```python
+# defeatbeta_api/data/dex.py
+from defeatbeta_api.client.duckdb_client import get_duckdb_client
+from defeatbeta_api.client.huggingface_client import HuggingFaceClient
+from defeatbeta_api.data.sql.sql_loader import load_sql
+from defeatbeta_api.utils.const import dex_swaps, dex_pools
+
+class DexPool:
+    """Entry point for DEX pool data and swaps."""
+
+    def __init__(self, pool_address: str, chain: str = "ethereum"):
+        self.pool_address = pool_address.lower()
+        self.chain = chain.lower()
+        self.duckdb_client = get_duckdb_client()
+        self.hf_client = HuggingFaceClient()
+
+    def swaps(self, limit: int = 1000):
+        url = self.hf_client.get_url_path(dex_swaps)
+        sql = load_sql("select_dex_swaps", url=url, pool=self.pool_address, chain=self.chain, limit=limit)
+        return self.duckdb_client.query(sql)
+
+    def info(self):
+        url = self.hf_client.get_url_path(dex_pools)
+        sql = load_sql("select_dex_pools", url=url, pool=self.pool_address, chain=self.chain)
+        return self.duckdb_client.query(sql)
+```
+
 ## Constants
 
 ```python
-# defeatbeta_crypto/utils/const.py
+# defeatbeta_api/utils/const.py
 
 # Table names
-ohlcv_daily = "ohlcv_daily"
-ohlcv_hourly = "ohlcv_hourly"
-ohlcv_1m = "ohlcv_1m"
-funding_rates = "funding_rates"
-open_interest = "open_interest"
-liquidations = "liquidations"
-token_info = "token_info"
-exchange_info = "exchange_info"
+equities_prices = "equities_prices"
+fx_rates_daily = "fx_rates_daily"
+cex_ohlcv_daily = "cex_ohlcv_daily"
+cex_ohlcv_hourly = "cex_ohlcv_hourly"
+cex_funding_rates = "cex_funding_rates"
+cex_open_interest = "cex_open_interest"
+cex_liquidations = "cex_liquidations"
+cex_token_info = "cex_token_info"
+dex_swaps = "dex_swaps"
+dex_pools = "dex_pools"
+bond_yields_daily = "bond_yields_daily"
+bond_reference = "bond_reference"
 
 TABLES = [
-    ohlcv_daily, ohlcv_hourly, ohlcv_1m,
-    funding_rates, open_interest, liquidations,
-    token_info, exchange_info
+    equities_prices, fx_rates_daily,
+    cex_ohlcv_daily, cex_ohlcv_hourly, cex_funding_rates,
+    cex_open_interest, cex_liquidations, cex_token_info,
+    dex_swaps, dex_pools,
+    bond_yields_daily, bond_reference
 ]
 
-# Supported exchanges
-EXCHANGES = ["binance", "coinbase", "okx", "bybit"]
+# Supported venues
+CEX_VENUES = ["binance", "coinbase", "okx", "bybit"]
+DEX_CHAINS = ["ethereum", "arbitrum", "base"]
 
 # Common trading pairs
 TOP_SYMBOLS = [
@@ -593,10 +683,20 @@ TOP_SYMBOLS = [
 ### Basic Usage
 
 ```python
-from defeatbeta_crypto import Token
+from defeatbeta_api import Ticker, CryptoToken
+from defeatbeta_api.data.fx import FXPair
+from defeatbeta_api.data.bond import Bond
 
-# Initialize token
-btc = Token("BTC")
+# Equities
+aapl = Ticker("AAPL")
+aapl.price()
+
+# FX
+eurusd = FXPair("EURUSD")
+eurusd.rate()
+
+# Crypto CEX
+btc = CryptoToken("BTC")
 
 # Get daily OHLCV
 ohlcv = btc.ohlcv(interval="1d", limit=365)
@@ -615,12 +715,12 @@ print(vol.tail())
 
 ```python
 # Get Binance-only data
-btc_binance = Token("BTC", exchange="binance")
+btc_binance = CryptoToken("BTC", exchange="binance")
 ohlcv = btc_binance.ohlcv()
 
 # Compare across exchanges
 for exchange in ["binance", "coinbase", "okx"]:
-    token = Token("BTC", exchange=exchange)
+    token = CryptoToken("BTC", exchange=exchange)
     df = token.ohlcv(limit=1)
     print(f"{exchange}: {df['close'].iloc[0]}")
 ```
@@ -628,12 +728,12 @@ for exchange in ["binance", "coinbase", "okx"]:
 ### Multiple Tokens
 
 ```python
-from defeatbeta_crypto import Token
+from defeatbeta_api import CryptoToken
 
 symbols = ["BTC", "ETH", "SOL", "AVAX"]
 
 for symbol in symbols:
-    token = Token(symbol)
+    token = CryptoToken(symbol)
     returns = token.returns(period="30d")
     print(f"{symbol}: {returns['return'].iloc[0]:.2%}")
 ```
@@ -641,9 +741,9 @@ for symbol in symbols:
 ### Generate Reports
 
 ```python
-from defeatbeta_crypto import Token
+from defeatbeta_api import CryptoToken
 
-btc = Token("BTC")
+btc = CryptoToken("BTC")
 btc.tearsheet(output="btc_analysis.html")
 ```
 
@@ -651,7 +751,7 @@ btc.tearsheet(output="btc_analysis.html")
 
 ```toml
 [project]
-name = "defeatbeta-crypto-api"
+name = "defeatbeta-api"
 version = "0.1.0"
 description = "Cryptocurrency market data API powered by DuckDB"
 requires-python = ">=3.9"
@@ -678,7 +778,7 @@ dev = [
 
 ### token_categories.json
 
-Token categorization for filtering and grouping by market sector.
+Crypto token categorization for filtering and grouping by market sector.
 
 ```json
 {
@@ -968,7 +1068,7 @@ Mapping of normalized symbols to exchange-specific formats.
 ### Template Loader
 
 ```python
-# defeatbeta_crypto/data/template/loader.py
+# defeatbeta_api/data/template/loader.py
 
 import json
 from pathlib import Path
@@ -1065,8 +1165,8 @@ def get_all_normalized_symbols() -> List[str]:
 ### Usage with Templates
 
 ```python
-from defeatbeta_crypto import Token
-from defeatbeta_crypto.data.template.loader import (
+from defeatbeta_api import CryptoToken
+from defeatbeta_api.data.template.loader import (
     get_symbols_by_category,
     get_native_symbol,
     get_category_for_symbol,
@@ -1075,7 +1175,7 @@ from defeatbeta_crypto.data.template.loader import (
 # Get all DeFi tokens
 defi_symbols = get_symbols_by_category("defi")
 for symbol in defi_symbols[:5]:
-    token = Token(symbol)
+    token = CryptoToken(symbol)
     print(f"{symbol}: {token.price()['close'].iloc[0]}")
 
 # Check symbol categories
