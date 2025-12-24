@@ -7,9 +7,9 @@
 <a target="new" href="https://pypi.python.org/pypi/defeatbeta-api"><img border=0 src="https://img.shields.io/pypi/dm/defeatbeta-api.svg?maxAge=2592000&label=installs&color=%23438546" alt="PyPi downloads"></a>
 <a target="new" href="https://github.com/defeat-beta/defeatbeta-api"><img border=0 src="https://img.shields.io/github/stars/defeat-beta/defeatbeta-api.svg?style=social&label=Star&maxAge=60" alt="Star this repo"></a>
 
-An open-source alternative to Yahoo Finance's market data APIs with higher reliability.
+An open-source market data API built as a Yahoo Finance alternative for equities, with a multi-asset roadmap for FX, crypto (CEX/DEX), and bonds.
 
-See the [example guide](doc/Example_Guide.md) for detailed usage instructions, and try it out directly in an interactive environment using
+See the [example guide](doc/Example_Guide.md) for detailed usage instructions (including multi-asset examples in `doc/FX_Examples.md`, `doc/Crypto_Examples.md`, `doc/Bond_Examples.md`), and try it out directly in an interactive environment using
 [![JupyterLab](https://img.shields.io/badge/Run%20in%20JupyterLab-blue?logo=jupyter&logoColor=white)](https://mybinder.org/v2/gh/defeat-beta/defeatbeta-api/release-0.0.27?urlpath=lab/tree/notebooks/05_tutorial_report.ipynb).
 
 The list of changes can be found in the [Changelog](CHANGELOG.rst)
@@ -18,9 +18,11 @@ The list of changes can be found in the [Changelog](CHANGELOG.rst)
 
 ✅ **High-Performance & Reliable Data Engine**: Provides a stable, reproducible market data source fully hosted on Hugging Face’s [yahoo-finance-data](https://huggingface.co/datasets/bwzheng2010/yahoo-finance-data) dataset—eliminating scraping issues and rate limits. Powered by [DuckDB’s OLAP engine](https://duckdb.org/) and the [`cache_httpfs`](https://duckdb.org/community_extensions/extensions/cache_httpfs.html) extension, the system delivers sub-second analytical queries with full SQL compatibility, giving you a unified, high-performance workflow for large-scale financial data.
 
-✅ **Extended Financial Data**: Includes [TTM EPS](doc/Value_Examples.md#1-stock-ttm-eps), [TTM PE](doc/Value_Examples.md#2-stock-ttm-pe), [Market Cap](doc/Value_Examples.md#3-stock-historical-market-cap), [PS Ratio](doc/Value_Examples.md#4-stock-historical-ps-ratio), [PB Ratio](doc/Value_Examples.md#5-stock-historical-pb-ratio), [PEG Ratio](doc/Value_Examples.md#6-stock-historical-peg-ratio), [ROE](doc/Value_Examples.md#7-stock-historical-roe), [ROIC](doc/Value_Examples.md#9-stock-historical-roic), [WACC](doc/Value_Examples.md#12-stock-historical-wacc), [ROA](doc/Value_Examples.md#8-stock-historical-roa), [Equity Multiplier](doc/Value_Examples.md#10-stock-historical-equity-multiplier), [Assert Turnover](doc/Value_Examples.md#11-stock-historical-assert-turnover), [Earnings call transcripts](doc/Info_Examples.md#3-accessing-earnings-call-transcripts), [Stock News](doc/Info_Examples.md#4-accessing-financial-news), [Revenue by segment](doc/Finance_Examples.md#91-stock-revenue-by-segment) and [Revenue by geography](doc/Finance_Examples.md#92-stock-revenue-by-geography) etc. (continuously expanding).
+✅ **Extended Financial Data**: Includes [TTM EPS](doc/Value_Examples.md#1-stock-ttm-eps), [TTM PE](doc/Value_Examples.md#2-stock-ttm-pe), [Market Cap](doc/Value_Examples.md#3-stock-historical-market-cap), [PS Ratio](doc/Value_Examples.md#4-stock-historical-ps-ratio), [PB Ratio](doc/Value_Examples.md#5-stock-historical-pb-ratio), [PEG Ratio](doc/Value_Examples.md#6-stock-historical-peg-ratio), [ROE](doc/Value_Examples.md#7-stock-historical-roe), [ROIC](doc/Value_Examples.md#9-stock-historical-roic), [WACC](doc/Value_Examples.md#12-stock-historical-wacc), [ROA](doc/Value_Examples.md#8-stock-historical-roa), [Equity Multiplier](doc/Value_Examples.md#10-stock-historical-equity-multiplier), [Assert Turnover](doc/Value_Examples.md#11-stock-historical-assert-turnover), [Earnings call transcripts](doc/Info_Examples.md#3-accessing-earnings-call-transcripts), [Stock News](doc/Info_Examples.md#4-accessing-financial-news), [Revenue by segment](doc/Finance_Examples.md#91-stock-revenue-by-segment) and [Revenue by geography](doc/Finance_Examples.md#92-stock-revenue-by-geography), plus exchange rates and treasury yields. (continuously expanding).
 
 ✅ **LLM-Powered Analysis**: Use Large Language Models (LLMs) to analyze [earnings call transcripts](doc/LLM_KeyData_Example.md), [quarterly financial changes](doc/LLM_ChangeData_Example.md), and [quarterly forecasts](doc/LLM_ForecastData_Example.md) to extract key data, understand metric changes, and interpret forecast drivers.
+
+✅ **Multi-Asset Roadmap**: Extend coverage to FX, crypto (CEX/DEX), and bonds with consistent schemas and APIs. See `/specs` for design and requirements.
 
 ## Quickstart
 
@@ -58,6 +60,25 @@ Instantiate the `Ticker` class with a company's ticker symbol. For example, to g
 import defeatbeta_api
 from defeatbeta_api.data.ticker import Ticker
 ticker = Ticker('TSLA')
+```
+
+Planned multi-asset entry points (see `/specs`):
+
+```python
+# FX
+# from defeatbeta_api.data.fx import FXPair
+# eurusd = FXPair("EURUSD")
+# eurusd.rate()
+
+# Crypto CEX
+# from defeatbeta_api.data.crypto import CryptoToken
+# btc = CryptoToken("BTC")
+# btc.ohlcv(interval="1d", limit=365)
+
+# Bonds
+# from defeatbeta_api.data.bond import Bond
+# ust = Bond("US10Y")
+# ust.yield_curve()
 ```
 The following examples demonstrate common API usage patterns (see more examples in [this documentation](doc/Example_Guide.md)):
 
