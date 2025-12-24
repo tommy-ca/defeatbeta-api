@@ -159,3 +159,7 @@ treasure.daily_treasure_yield()
 8935  2025-09-18     0.0420     0.0414  ...    0.0386     0.0411     0.0472
 8936  2025-09-19     0.0419     0.0414  ...    0.0388     0.0414     0.0475
 ```
+
+See also:
+- FX spot rates in [FX Examples](FX_Examples.md)
+- Bond curves in [Bond Examples](Bond_Examples.md)
