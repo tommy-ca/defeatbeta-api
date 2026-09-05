@@ -5,8 +5,8 @@
 - [Main Usage Index](#main-usage-index)
   - [📊 Stock Evaluation Dimensions](#-stock-evaluation-dimensions)
   - [📰 Generate Analysis Report](#-generate-analysis-report)
-  - [🤖 LLM-Powered Analysis](#-llm-powered-analysis)
-  - [🏦 Economy Analysis](#-economy-analysis)
+- [🤖 LLM-Powered Analysis](#-llm-powered-analysis)
+- [🏦 Economy Analysis](#-economy-analysis)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -51,5 +51,15 @@
 > [!TIP]
 > This project also supports some economic and market data. see [Economy Examples](Economy_Examples.md)
 > It includes `sp500-historical-annual-returns`, `sp500-cagr-returns`, `daily-par-yield-curve`
+
+---
+
+## Multi-Asset Markets
+
+> [!TIP]
+> Multi-asset extensions are documented in:
+> - [FX Examples](FX_Examples.md)
+> - [Crypto Examples](Crypto_Examples.md)
+> - [Bond Examples](Bond_Examples.md)
 
 ---
